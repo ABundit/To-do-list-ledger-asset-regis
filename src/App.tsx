@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -156,24 +156,42 @@ function App() {
   ]
   const assets = [...customAssets[mode], ...(isPersonal ? assetRows : workAssetRows)]
   const meta = navMeta[activeNav]
+  const customIncomeTotal = customTransactions[mode]
+    .filter((transaction) => transaction.tone === 'income')
+    .reduce((sum, transaction) => sum + (transaction.rawAmount ?? 0), 0)
+  const customExpenseTotal = customTransactions[mode]
+    .filter((transaction) => transaction.tone === 'expense')
+    .reduce((sum, transaction) => sum + (transaction.rawAmount ?? 0), 0)
+  const monthlyIncome = (isPersonal ? 48_260 : 60_900) + customIncomeTotal
+  const monthlyExpense = (isPersonal ? 21_840 : 12_640) + customExpenseTotal
+  const assetRegistryTotal = assets.reduce(
+    (sum, asset) => sum + Number(asset.value.replace(/[฿,]/g, '')),
+    0,
+  )
+  const customAssetTotal = customAssets[mode].reduce(
+    (sum, asset) => sum + Number(asset.value.replace(/[฿,]/g, '')),
+    0,
+  )
+  const customInvestmentTotal = customInvestments[mode].reduce(
+      (sum, item) => sum + Number(item.amount.replace(/[฿,]/g, '')),
+      0,
+    )
+  const investmentTotal = (isPersonal ? 1_247_830 : 684_250) + customInvestmentTotal
+  const baht = (value: number) => `฿${value.toLocaleString('th-TH')}`
 
-  const totals = useMemo(
-    () =>
-      isPersonal
-        ? [
-            { label: 'ทรัพย์สินสุทธิ', value: '฿5,482,350', trend: '+6.4%', type: 'up', note: 'จากเดือนที่แล้ว' },
-            { label: 'รายรับเดือนนี้', value: '฿48,260', trend: '+8.2%', type: 'up', note: 'รวมทุกแหล่งรายได้' },
-            { label: 'รายจ่ายเดือนนี้', value: '฿21,840', trend: '−3.1%', type: 'down', note: 'ต่ำกว่าเดือนที่แล้ว' },
+  const totals = isPersonal
+    ? [
+            { label: 'ทรัพย์สินสุทธิ', value: baht(5_482_350 + customAssetTotal + customInvestmentTotal), trend: '+6.4%', type: 'up', note: 'จากเดือนที่แล้ว' },
+            { label: 'รายรับเดือนนี้', value: baht(monthlyIncome), trend: '+8.2%', type: 'up', note: 'รวมทุกแหล่งรายได้' },
+            { label: 'รายจ่ายเดือนนี้', value: baht(monthlyExpense), trend: '−3.1%', type: 'down', note: 'รวมรายการเชื่อมโยง' },
             { label: 'งานที่ต้องทำ', value: '8 งาน', trend: '3', type: 'task', note: 'งานสำคัญวันนี้' },
           ]
-        : [
-            { label: 'รายรับจากงาน', value: '฿60,900', trend: '+4.1%', type: 'up', note: 'จากเดือนที่แล้ว' },
-            { label: 'ค่าใช้จ่ายงาน', value: '฿12,640', trend: '−2.6%', type: 'down', note: 'อยู่ในงบประมาณ' },
+    : [
+            { label: 'รายรับจากงาน', value: baht(monthlyIncome), trend: '+4.1%', type: 'up', note: 'จากเดือนที่แล้ว' },
+            { label: 'ค่าใช้จ่ายงาน', value: baht(monthlyExpense), trend: '−2.6%', type: 'down', note: 'รวมรายการเชื่อมโยง' },
             { label: 'งบโครงการคงเหลือ', value: '฿184,500', trend: '72%', type: 'up', note: 'ของงบโครงการ' },
             { label: 'งานที่ต้องทำ', value: '11 งาน', trend: '4', type: 'task', note: 'งานเร่งด่วนวันนี้' },
-          ],
-    [isPersonal],
-  )
+          ]
 
   const handleFiles = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -553,7 +571,7 @@ function App() {
               <div className="portfolio-total">
                 <div>
                   <small>มูลค่าพอร์ตรวม</small>
-                  <strong>{isPersonal ? '฿1,247,830' : '฿684,250'}</strong>
+                  <strong>{baht(investmentTotal)}</strong>
                   <span><ArrowUpRight size={13} /> +9.8% ปีนี้</span>
                 </div>
                 <div className="donut">
@@ -677,9 +695,9 @@ function App() {
           {activeNav === 'ledger' && (
             <section className="focus-page">
               <div className="focus-stat-grid ledger-stats">
-                <article><span>รายรับเดือนนี้</span><strong>{isPersonal ? '฿48,260' : '฿60,900'}</strong><small className="income">+8.2% จากเดือนก่อน</small></article>
-                <article><span>รายจ่ายเดือนนี้</span><strong>{isPersonal ? '฿21,840' : '฿12,640'}</strong><small className="expense">รวมรายการเชื่อมโยง</small></article>
-                <article><span>คงเหลือสุทธิ</span><strong>{isPersonal ? '฿26,420' : '฿48,260'}</strong><small>กระแสเงินสดเดือนนี้</small></article>
+                <article><span>รายรับเดือนนี้</span><strong>{baht(monthlyIncome)}</strong><small className="income">+8.2% จากเดือนก่อน</small></article>
+                <article><span>รายจ่ายเดือนนี้</span><strong>{baht(monthlyExpense)}</strong><small className="expense">รวมรายการเชื่อมโยง</small></article>
+                <article><span>คงเหลือสุทธิ</span><strong>{baht(monthlyIncome - monthlyExpense)}</strong><small>กระแสเงินสดเดือนนี้</small></article>
               </div>
               <div className="ledger-toolbar">
                 <div className="ledger-tabs">
@@ -733,7 +751,7 @@ function App() {
                   <div className="portfolio-total">
                     <div>
                       <small>มูลค่าพอร์ตรวม</small>
-                      <strong>{isPersonal ? '฿1,247,830' : '฿684,250'}</strong>
+                      <strong>{baht(investmentTotal)}</strong>
                       <span><ArrowUpRight size={13} /> +9.8% ปีนี้</span>
                     </div>
                     <div className="donut"><div><strong>4</strong><small>ประเภท</small></div></div>
@@ -789,7 +807,7 @@ function App() {
               </div>
               <div className="focus-stat-grid">
                 <article><span>ทรัพย์สินทั้งหมด</span><strong>{assets.length}</strong><small>รายการในทะเบียน</small></article>
-                <article><span>มูลค่ารวม</span><strong>{isPersonal ? '฿4,812,900' : '฿134,300'}</strong><small>มูลค่าประมาณการ</small></article>
+                <article><span>มูลค่ารวม</span><strong>{baht(assetRegistryTotal)}</strong><small>มูลค่าประมาณการ</small></article>
                 <article><span>เอกสารที่จัดเก็บ</span><strong>{assets.reduce((sum, asset) => sum + asset.docs, 0)}</strong><small>PDF / รูปภาพ</small></article>
               </div>
               <article className="panel assets-panel assets-focus-panel">
