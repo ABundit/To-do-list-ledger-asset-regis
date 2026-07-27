@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type LucideIcon } from 'react'
+import { useMemo, useState, type ChangeEvent } from 'react'
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -27,6 +27,7 @@ import {
   UserRound,
   WalletCards,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 
 type Mode = 'personal' | 'work'
