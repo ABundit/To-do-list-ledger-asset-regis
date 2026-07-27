@@ -10,14 +10,19 @@ import {
   ChevronDown,
   Circle,
   Clock3,
+  Download,
   File,
   FileText,
   FolderOpen,
+  HardDrive,
+  History,
   Image,
+  KeyRound,
   Landmark,
   LayoutDashboard,
   Link2,
   ListTodo,
+  MapPin,
   MoreHorizontal,
   Plus,
   ReceiptText,
@@ -28,6 +33,7 @@ import {
   TrendingUp,
   Upload,
   UserRound,
+  Users,
   WalletCards,
   X,
   type LucideIcon,
@@ -36,6 +42,7 @@ import {
 type Mode = 'personal' | 'work'
 type NavKey = 'overview' | 'tasks' | 'ledger' | 'investment' | 'assets'
 type EntryKind = 'income' | 'expense' | 'asset' | 'investment'
+type AssetAcquisition = 'new' | 'existing'
 type Transaction = {
   id?: string
   title: string
@@ -54,6 +61,10 @@ type AssetRow = {
   value: string
   updated: string
   docs: number
+  location: string
+  custodian: string
+  acquisition: AssetAcquisition
+  custody?: string
 }
 type InvestmentEntry = {
   name: string
@@ -105,15 +116,15 @@ const workTransactions: Transaction[] = [
 ]
 
 const assetRows: AssetRow[] = [
-  { icon: '🏠', name: 'บ้านพักอาศัย', category: 'อสังหาริมทรัพย์', value: '฿3,850,000', updated: '12 ก.ค. 2569', docs: 3 },
-  { icon: '🚙', name: 'Toyota Corolla Cross', category: 'ยานพาหนะ', value: '฿890,000', updated: '4 มิ.ย. 2569', docs: 2 },
-  { icon: '💻', name: 'MacBook Pro 14"', category: 'อุปกรณ์', value: '฿72,900', updated: '18 พ.ค. 2569', docs: 1 },
+  { icon: '🏠', name: 'บ้านพักอาศัย', category: 'อสังหาริมทรัพย์', value: '฿3,850,000', updated: '12 ก.ค. 2569', docs: 3, location: 'เชียงใหม่ · อ.เมือง', custodian: 'คุณสมชาย', acquisition: 'existing' },
+  { icon: '🚙', name: 'Toyota Corolla Cross', category: 'ยานพาหนะ', value: '฿890,000', updated: '4 มิ.ย. 2569', docs: 2, location: 'บ้านเชียงใหม่ · โรงรถ', custodian: 'คุณสุดา', acquisition: 'existing' },
+  { icon: '💻', name: 'MacBook Pro 14"', category: 'อุปกรณ์', value: '฿72,900', updated: '18 พ.ค. 2569', docs: 1, location: 'บ้านเชียงใหม่ · ห้องทำงาน', custodian: 'คุณนรินทร์', acquisition: 'new' },
 ]
 
 const workAssetRows: AssetRow[] = [
-  { icon: '📐', name: 'ชุดอุปกรณ์สำรวจหน้างาน', category: 'เครื่องมือ', value: '฿48,500', updated: '20 ก.ค. 2569', docs: 2 },
-  { icon: '💻', name: 'Notebook วิศวกรรม', category: 'อุปกรณ์สำนักงาน', value: '฿56,900', updated: '6 ก.ค. 2569', docs: 2 },
-  { icon: '📱', name: 'โทรศัพท์สำหรับงาน', category: 'อุปกรณ์สื่อสาร', value: '฿28,900', updated: '14 มิ.ย. 2569', docs: 1 },
+  { icon: '📐', name: 'ชุดอุปกรณ์สำรวจหน้างาน', category: 'เครื่องมือ', value: '฿48,500', updated: '20 ก.ค. 2569', docs: 2, location: 'ไซต์งาน A · ตู้เครื่องมือ', custodian: 'คุณนรินทร์', acquisition: 'new' },
+  { icon: '💻', name: 'Notebook วิศวกรรม', category: 'อุปกรณ์สำนักงาน', value: '฿56,900', updated: '6 ก.ค. 2569', docs: 2, location: 'สำนักงานใหญ่ · โต๊ะทำงาน', custodian: 'คุณนรินทร์', acquisition: 'new' },
+  { icon: '📱', name: 'โทรศัพท์สำหรับงาน', category: 'อุปกรณ์สื่อสาร', value: '฿28,900', updated: '14 มิ.ย. 2569', docs: 1, location: 'อยู่กับผู้ใช้งาน', custodian: 'คุณนรินทร์', acquisition: 'new' },
 ]
 
 const members = [
@@ -134,6 +145,16 @@ function App() {
   const [entryName, setEntryName] = useState('')
   const [entryAmount, setEntryAmount] = useState('')
   const [entryCategory, setEntryCategory] = useState('ทั่วไป')
+  const [assetAcquisition, setAssetAcquisition] = useState<AssetAcquisition>('new')
+  const [assetLocation, setAssetLocation] = useState('')
+  const [assetSubLocation, setAssetSubLocation] = useState('')
+  const [assetCustodian, setAssetCustodian] = useState('คุณสมชาย')
+  const [documentLocation, setDocumentLocation] = useState('')
+  const [digitalCustody, setDigitalCustody] = useState('Hardware Wallet')
+  const [digitalProvider, setDigitalProvider] = useState('')
+  const [digitalNetwork, setDigitalNetwork] = useState('')
+  const [publicAddress, setPublicAddress] = useState('')
+  const [recoveryLocation, setRecoveryLocation] = useState('')
   const [savedMessage, setSavedMessage] = useState('')
   const [customTransactions, setCustomTransactions] = useState<Record<Mode, Transaction[]>>({
     personal: [],
@@ -211,15 +232,35 @@ function App() {
     setEntryName('')
     setEntryAmount('')
     setEntryCategory(nextKind === 'asset' ? 'อุปกรณ์' : nextKind === 'investment' ? 'กองทุนรวม' : 'ทั่วไป')
+    setAssetAcquisition('new')
+    setAssetLocation('')
+    setAssetSubLocation('')
+    setAssetCustodian(member === 'somchai' ? 'คุณสมชาย' : member === 'suda' ? 'คุณสุดา' : 'คุณนรินทร์')
+    setDocumentLocation('')
+    setDigitalCustody('Hardware Wallet')
+    setDigitalProvider('')
+    setDigitalNetwork('')
+    setPublicAddress('')
+    setRecoveryLocation('')
     setShowEntry(true)
   }
 
   const saveEntry = () => {
     const amount = Number(entryAmount.replace(/,/g, ''))
-    if (!entryName.trim() || !Number.isFinite(amount) || amount <= 0) return
+    if (
+      !entryName.trim()
+      || !Number.isFinite(amount)
+      || amount <= 0
+      || (entryKind === 'asset' && !assetLocation.trim())
+    ) return
 
     const isIncome = entryKind === 'income'
-    const linkedTo = entryKind === 'asset' ? 'asset' : entryKind === 'investment' ? 'investment' : undefined
+    const shouldCreateTransaction = entryKind !== 'asset' || assetAcquisition === 'new'
+    const linkedTo = entryKind === 'asset' && assetAcquisition === 'new'
+      ? 'asset'
+      : entryKind === 'investment'
+        ? 'investment'
+        : undefined
     const formattedAmount = `${isIncome ? '+' : '−'}฿${amount.toLocaleString('th-TH')}`
     const transaction: Transaction = {
       id: `${Date.now()}-${entryKind}`,
@@ -233,27 +274,45 @@ function App() {
       linkedTo,
     }
 
-    setCustomTransactions((current) => ({
-      ...current,
-      [mode]: [transaction, ...current[mode]],
-    }))
+    if (shouldCreateTransaction) {
+      setCustomTransactions((current) => ({
+        ...current,
+        [mode]: [transaction, ...current[mode]],
+      }))
+    }
 
     if (entryKind === 'asset') {
       setCustomAssets((current) => ({
         ...current,
         [mode]: [
           {
-            icon: entryCategory === 'ยานพาหนะ' ? '🚙' : entryCategory === 'อสังหาริมทรัพย์' ? '🏠' : '📦',
+            icon: entryCategory === 'ยานพาหนะ'
+              ? '🚙'
+              : entryCategory === 'อสังหาริมทรัพย์'
+                ? '🏠'
+                : entryCategory === 'สินทรัพย์ดิจิทัล'
+                  ? '₿'
+                  : '📦',
             name: entryName.trim(),
             category: entryCategory,
             value: `฿${amount.toLocaleString('th-TH')}`,
             updated: '27 ก.ค. 2569',
             docs: 0,
+            location: [assetLocation.trim(), assetSubLocation.trim()].filter(Boolean).join(' · '),
+            custodian: assetCustodian,
+            acquisition: assetAcquisition,
+            custody: entryCategory === 'สินทรัพย์ดิจิทัล'
+              ? [digitalCustody, digitalProvider.trim()].filter(Boolean).join(' · ')
+              : undefined,
           },
           ...current[mode],
         ],
       }))
-      setSavedMessage(`บันทึก “${entryName.trim()}” ในทะเบียนทรัพย์สิน และสร้างรายจ่ายใน Ledger แล้ว`)
+      setSavedMessage(
+        assetAcquisition === 'new'
+          ? `บันทึก “${entryName.trim()}” ในทะเบียนทรัพย์สิน และสร้างรายจ่ายใน Ledger แล้ว`
+          : `เพิ่ม “${entryName.trim()}” เป็นทรัพย์สินเดิมแล้ว โดยไม่กระทบรายจ่ายปัจจุบัน`,
+      )
     } else if (entryKind === 'investment') {
       setCustomInvestments((current) => ({
         ...current,
@@ -273,6 +332,29 @@ function App() {
     }
 
     setShowEntry(false)
+  }
+
+  const exportAssetRegister = () => {
+    const escapeCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`
+    const rows = [
+      ['ชื่อทรัพย์สิน', 'หมวดหมู่', 'มูลค่า', 'สถานที่จัดเก็บ', 'ผู้ดูแล', 'ประเภทการได้มา', 'เอกสาร'],
+      ...assets.map((asset) => [
+        asset.name,
+        asset.category,
+        asset.value,
+        asset.location,
+        asset.custodian,
+        asset.acquisition === 'existing' ? 'ทรัพย์สินเดิม' : 'ซื้อใหม่',
+        `${asset.docs} ไฟล์`,
+      ]),
+    ]
+    const csv = `\uFEFF${rows.map((row) => row.map(escapeCell).join(',')).join('\n')}`
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `baanbalance-assets-${mode}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -313,10 +395,10 @@ function App() {
           <span>ตั้งค่า</span>
         </button>
         <div className="privacy-note">
-          <ShieldCheck size={18} />
+          {isPersonal ? <Users size={18} /> : <BriefcaseBusiness size={18} />}
           <div>
-            <strong>ข้อมูลของคุณปลอดภัย</strong>
-            <span>เข้ารหัสและแยกตามสมาชิก</span>
+            <strong>{isPersonal ? 'Family Vault' : 'Work Space'}</strong>
+            <span>{isPersonal ? 'สมาชิกครอบครัวเห็นข้อมูลร่วมกัน' : 'แยกจากข้อมูลครอบครัว'}</span>
           </div>
         </div>
         <div className="sidebar-profile">
@@ -622,7 +704,7 @@ function App() {
               <div className="asset-table-head">
                 <span>รายการทรัพย์สิน</span>
                 <span>มูลค่าโดยประมาณ</span>
-                <span>อัปเดตล่าสุด</span>
+                <span>สถานที่จัดเก็บ</span>
                 <span>เอกสาร</span>
               </div>
               {assets.map((asset) => (
@@ -635,7 +717,7 @@ function App() {
                     </div>
                   </div>
                   <strong>{asset.value}</strong>
-                  <span>{asset.updated}</span>
+                  <div className="asset-location"><MapPin size={13} /><span>{asset.location}</span></div>
                   <button className="doc-pill" onClick={() => setShowUpload(true)}>
                     <FolderOpen size={15} /> {asset.docs} ไฟล์
                   </button>
@@ -800,9 +882,20 @@ function App() {
 
           {activeNav === 'assets' && (
             <section className="focus-page">
+              {isPersonal && (
+                <div className="family-vault-banner">
+                  <span className="vault-icon"><Users size={21} /></span>
+                  <div>
+                    <span className="panel-kicker">Family Vault · แชร์เป็นค่าเริ่มต้น</span>
+                    <strong>สมาชิกครอบครัวทุกคนค้นหาและดูทะเบียนนี้ได้</strong>
+                    <small>ข้อมูล Work ถูกแยกออกจากพื้นที่ครอบครัว และการแก้ไขทุกครั้งมีประวัติกำกับ</small>
+                  </div>
+                  <span className="member-stack"><i>สช</i><i>สด</i><i>นร</i></span>
+                </div>
+              )}
               <div className="link-explainer asset-explainer">
                 <Link2 size={20} />
-                <div><strong>ทะเบียนทรัพย์สินเชื่อมกับรายรับ–รายจ่าย</strong><span>เมื่อเพิ่มรายการซื้อทรัพย์สิน ระบบจะสร้างรายจ่ายหมวด “ซื้อทรัพย์สิน” ใน Ledger ให้อัตโนมัติ</span></div>
+                <div><strong>เลือกวิธีบันทึกให้ตรงกับที่มาของทรัพย์สิน</strong><span>ซื้อใหม่จะเชื่อมรายจ่ายอัตโนมัติ ส่วนทรัพย์สินเดิมจะเพิ่มเฉพาะทะเบียนและไม่กระทบรายจ่ายปัจจุบัน</span></div>
                 <button className="secondary-button" onClick={() => setActiveNav('ledger')}>เปิดดู Ledger <ArrowUpRight size={14} /></button>
               </div>
               <div className="focus-stat-grid">
@@ -810,16 +903,40 @@ function App() {
                 <article><span>มูลค่ารวม</span><strong>{baht(assetRegistryTotal)}</strong><small>มูลค่าประมาณการ</small></article>
                 <article><span>เอกสารที่จัดเก็บ</span><strong>{assets.reduce((sum, asset) => sum + asset.docs, 0)}</strong><small>PDF / รูปภาพ</small></article>
               </div>
+              {isPersonal && (
+                <article className="panel custody-panel">
+                  <div className="panel-heading">
+                    <div><span className="panel-kicker">Digital Asset Custody</span><h2>สินทรัพย์ดิจิทัลเก็บไว้ที่ไหน</h2></div>
+                    <span className="security-chip"><KeyRound size={13} /> ไม่เก็บ Seed Phrase</span>
+                  </div>
+                  <div className="custody-grid">
+                    <div className="custody-card">
+                      <span className="custody-icon hardware"><HardDrive size={19} /></span>
+                      <div><strong>Ledger Nano X</strong><small>Hardware Wallet · Bitcoin</small></div>
+                      <div className="custody-place"><MapPin size={13} /><span>บ้านเชียงใหม่ · ตู้เซฟช่อง 2</span></div>
+                      <span className="verified-label">ตรวจสอบล่าสุด 20 ก.ค. 2569</span>
+                    </div>
+                    <div className="custody-card">
+                      <span className="custody-icon exchange"><Landmark size={19} /></span>
+                      <div><strong>Binance TH</strong><small>Exchange · ETH / USDT</small></div>
+                      <div className="custody-place"><ShieldCheck size={13} /><span>เปิดใช้ 2FA · บัญชีคุณสมชาย</span></div>
+                      <span className="verified-label">ตรวจสอบล่าสุด 25 ก.ค. 2569</span>
+                    </div>
+                  </div>
+                  <div className="security-note"><ShieldCheck size={16} /><span>ระบบเก็บเฉพาะตำแหน่งและข้อมูลอ้างอิง ไม่จัดเก็บ PIN, Password, Private Key หรือ Seed Phrase</span></div>
+                </article>
+              )}
               <article className="panel assets-panel assets-focus-panel">
                 <div className="panel-heading asset-heading">
                   <div><span className="panel-kicker">ทะเบียนกลาง</span><h2>รายการทรัพย์สินทั้งหมด</h2></div>
                   <div className="asset-actions">
                     <button className="secondary-button" onClick={() => setShowUpload(true)}><Upload size={16} /> อัปโหลดเอกสาร</button>
-                    <button className="primary-button" onClick={() => openEntryForm('asset')}><Plus size={16} /> ซื้อทรัพย์สิน</button>
+                    <button className="secondary-button" onClick={exportAssetRegister}><Download size={16} /> ส่งออกทะเบียน</button>
+                    <button className="primary-button" onClick={() => openEntryForm('asset')}><Plus size={16} /> เพิ่มทรัพย์สิน</button>
                   </div>
                 </div>
                 <div className="asset-table">
-                  <div className="asset-table-head"><span>รายการทรัพย์สิน</span><span>มูลค่าโดยประมาณ</span><span>อัปเดตล่าสุด</span><span>เอกสาร</span></div>
+                  <div className="asset-table-head"><span>รายการทรัพย์สิน</span><span>มูลค่าโดยประมาณ</span><span>สถานที่จัดเก็บ / ผู้ดูแล</span><span>เอกสาร</span></div>
                   {assets.map((asset, index) => (
                     <div className={`asset-row ${index < customAssets[mode].length ? 'new-entry' : ''}`} key={`${asset.name}-${index}`}>
                       <div className="asset-name">
@@ -827,7 +944,10 @@ function App() {
                         <div><strong>{asset.name}</strong><small>{asset.category}</small></div>
                       </div>
                       <strong>{asset.value}</strong>
-                      <span>{asset.updated}</span>
+                      <div className="asset-location">
+                        <MapPin size={13} />
+                        <span>{asset.custody ?? asset.location}<small>{asset.custodian} · อัปเดต {asset.updated}</small></span>
+                      </div>
                       <button className="doc-pill" onClick={() => setShowUpload(true)}><FolderOpen size={15} /> {asset.docs} ไฟล์</button>
                     </div>
                   ))}
@@ -877,7 +997,7 @@ function App() {
             <div className="file-types">
               <div><FileText size={18} /><span><strong>PDF</strong><small>โฉนดและสัญญา</small></span></div>
               <div><Image size={18} /><span><strong>JPG / PNG</strong><small>ภาพทรัพย์สิน</small></span></div>
-              <div><ShieldCheck size={18} /><span><strong>Private</strong><small>เฉพาะครอบครัว</small></span></div>
+              <div><Users size={18} /><span><strong>Family access</strong><small>สมาชิกทุกคนดูได้</small></span></div>
             </div>
             {files.length > 0 && (
               <div className="selected-files">
@@ -929,7 +1049,7 @@ function App() {
               {([
                 ['expense', 'รายจ่าย', WalletCards],
                 ['income', 'รายรับ', ArrowDownRight],
-                ['asset', 'ซื้อทรัพย์สิน', Landmark],
+                ['asset', 'ทรัพย์สิน', Landmark],
                 ['investment', 'ซื้อการลงทุน', TrendingUp],
               ] as const).map(([kind, label, Icon]) => (
                 <button
@@ -939,6 +1059,7 @@ function App() {
                   onClick={() => {
                     setEntryKind(kind)
                     setEntryCategory(kind === 'asset' ? 'อุปกรณ์' : kind === 'investment' ? 'กองทุนรวม' : 'ทั่วไป')
+                    if (kind === 'asset') setAssetAcquisition('new')
                   }}
                 >
                   <Icon size={18} />
@@ -947,14 +1068,46 @@ function App() {
               ))}
             </div>
 
+            {entryKind === 'asset' && (
+              <div className="asset-origin-section">
+                <span>ทรัพย์สินนี้มาจากไหน?</span>
+                <div className="asset-origin-switch">
+                  <button
+                    type="button"
+                    className={assetAcquisition === 'new' ? 'active' : ''}
+                    onClick={() => setAssetAcquisition('new')}
+                  >
+                    <ReceiptText size={18} />
+                    <span><strong>ซื้อใหม่</strong><small>เพิ่มทะเบียน + รายจ่าย</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    className={assetAcquisition === 'existing' ? 'active' : ''}
+                    onClick={() => setAssetAcquisition('existing')}
+                  >
+                    <History size={18} />
+                    <span><strong>ทรัพย์สินเดิม / ยอดยกมา</strong><small>เพิ่มเฉพาะทะเบียน</small></span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {(entryKind === 'asset' || entryKind === 'investment') && (
-              <div className="entry-link-preview">
-                <Link2 size={18} />
+              <div className={`entry-link-preview ${entryKind === 'asset' && assetAcquisition === 'existing' ? 'single-record' : ''}`}>
+                {entryKind === 'asset' && assetAcquisition === 'existing' ? <Landmark size={18} /> : <Link2 size={18} />}
                 <div>
                   <strong>
-                    จะบันทึก 2 ที่: {entryKind === 'asset' ? 'ทะเบียนทรัพย์สิน + รายจ่าย' : 'พอร์ตลงทุน + เงินออก'}
+                    {entryKind === 'asset'
+                      ? assetAcquisition === 'new'
+                        ? 'จะบันทึก 2 ที่: ทะเบียนทรัพย์สิน + รายจ่าย'
+                        : 'จะบันทึกเฉพาะทะเบียนทรัพย์สิน — ไม่สร้างรายจ่ายปัจจุบัน'
+                      : 'จะบันทึก 2 ที่: พอร์ตลงทุน + เงินออก'}
                   </strong>
-                  <span>ข้อมูลทั้งสองส่วนจะอ้างอิงรายการเดียวกันและไม่ต้องกรอกซ้ำ</span>
+                  <span>
+                    {entryKind === 'asset' && assetAcquisition === 'existing'
+                      ? 'เหมาะสำหรับทรัพย์สินที่มีอยู่ก่อนเริ่มใช้ระบบ มรดก หรือของขวัญ'
+                      : 'ข้อมูลทั้งสองส่วนจะอ้างอิงรายการเดียวกันและไม่ต้องกรอกซ้ำ'}
+                  </span>
                 </div>
               </div>
             )}
@@ -971,7 +1124,11 @@ function App() {
                 />
               </label>
               <label className="form-field">
-                <span>จำนวนเงิน (บาท)</span>
+                <span>
+                  {entryKind === 'asset'
+                    ? assetAcquisition === 'existing' ? 'มูลค่าปัจจุบัน (บาท)' : 'ราคาซื้อ (บาท)'
+                    : 'จำนวนเงิน (บาท)'}
+                </span>
                 <input
                   required
                   min="1"
@@ -986,7 +1143,7 @@ function App() {
                 <span>หมวดหมู่</span>
                 <select value={entryCategory} onChange={(event) => setEntryCategory(event.target.value)}>
                   {(entryKind === 'asset'
-                    ? ['อุปกรณ์', 'ยานพาหนะ', 'อสังหาริมทรัพย์', 'ของใช้ในบ้าน']
+                    ? ['อุปกรณ์', 'ยานพาหนะ', 'อสังหาริมทรัพย์', 'ของใช้ในบ้าน', 'สินทรัพย์ดิจิทัล']
                     : entryKind === 'investment'
                       ? ['กองทุนรวม', 'หุ้น', 'สินทรัพย์ดิจิทัล', 'เงินฝาก/สหกรณ์']
                       : entryKind === 'income'
@@ -996,22 +1153,135 @@ function App() {
                 </select>
               </label>
               <label className="form-field">
-                <span>วันที่</span>
+                <span>{entryKind === 'asset' ? 'วันที่ได้มา / วันที่ซื้อ' : 'วันที่'}</span>
                 <input type="date" defaultValue="2026-07-27" />
               </label>
-              <label className="form-field">
-                <span>บัญชีที่ชำระ</span>
-                <select defaultValue="ธนาคารกรุงไทย">
-                  <option>ธนาคารกรุงไทย</option>
-                  <option>เงินสด</option>
-                  <option>บัญชีสหกรณ์</option>
-                </select>
-              </label>
+              {entryKind !== 'asset' || assetAcquisition === 'new' ? (
+                <label className="form-field">
+                  <span>บัญชีที่ชำระ</span>
+                  <select defaultValue="ธนาคารกรุงไทย">
+                    <option>ธนาคารกรุงไทย</option>
+                    <option>เงินสด</option>
+                    <option>บัญชีสหกรณ์</option>
+                  </select>
+                </label>
+              ) : (
+                <label className="form-field">
+                  <span>วิธีได้มา</span>
+                  <select defaultValue="ซื้อไว้ก่อนเริ่มใช้ระบบ">
+                    <option>ซื้อไว้ก่อนเริ่มใช้ระบบ</option>
+                    <option>รับมรดก</option>
+                    <option>ของขวัญ</option>
+                    <option>อื่น ๆ</option>
+                  </select>
+                </label>
+              )}
+            </div>
+
+            {entryKind === 'asset' && (
+              <>
+                <div className="form-section-heading">
+                  <MapPin size={16} />
+                  <div><strong>ตำแหน่งและผู้ดูแล</strong><span>ช่วยให้สมาชิกครอบครัวค้นหาทรัพย์สินและเอกสารได้ในกรณีฉุกเฉิน</span></div>
+                </div>
+                <div className="form-grid asset-location-fields">
+                  <label className="form-field">
+                    <span>สถานที่หลัก *</span>
+                    <input
+                      required
+                      value={assetLocation}
+                      onChange={(event) => setAssetLocation(event.target.value)}
+                      placeholder={entryCategory === 'สินทรัพย์ดิจิทัล' ? 'เช่น บ้านเชียงใหม่' : 'เช่น บ้านเชียงใหม่'}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>ตำแหน่งย่อย</span>
+                    <input
+                      value={assetSubLocation}
+                      onChange={(event) => setAssetSubLocation(event.target.value)}
+                      placeholder="เช่น ห้องทำงาน · ตู้เซฟช่อง 2"
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>ผู้ถือครอง / ผู้ดูแล</span>
+                    <select value={assetCustodian} onChange={(event) => setAssetCustodian(event.target.value)}>
+                      <option>คุณสมชาย</option>
+                      <option>คุณสุดา</option>
+                      <option>คุณนรินทร์</option>
+                      <option>ดูแลร่วมกัน</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>ที่เก็บเอกสารต้นฉบับ</span>
+                    <input
+                      value={documentLocation}
+                      onChange={(event) => setDocumentLocation(event.target.value)}
+                      placeholder="เช่น ตู้เอกสาร ชั้น 2 แฟ้มสีเขียว"
+                    />
+                  </label>
+                </div>
+              </>
+            )}
+
+            {entryKind === 'asset' && entryCategory === 'สินทรัพย์ดิจิทัล' && (
+              <div className="digital-fields">
+                <div className="form-section-heading">
+                  <HardDrive size={16} />
+                  <div><strong>ข้อมูลการเก็บรักษาสินทรัพย์ดิจิทัล</strong><span>ระบุแหล่งจัดเก็บเพื่อให้ครอบครัวติดตามทรัพย์สินได้</span></div>
+                </div>
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>ประเภทที่เก็บ</span>
+                    <select value={digitalCustody} onChange={(event) => setDigitalCustody(event.target.value)}>
+                      <option>Hardware Wallet</option>
+                      <option>Exchange</option>
+                      <option>Software Wallet</option>
+                      <option>DeFi / Staking</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>ผู้ให้บริการ / รุ่นอุปกรณ์</span>
+                    <input value={digitalProvider} onChange={(event) => setDigitalProvider(event.target.value)} placeholder="เช่น Ledger Nano X หรือ Binance TH" />
+                  </label>
+                  <label className="form-field">
+                    <span>เครือข่าย</span>
+                    <input value={digitalNetwork} onChange={(event) => setDigitalNetwork(event.target.value)} placeholder="เช่น Bitcoin, Ethereum" />
+                  </label>
+                  <label className="form-field">
+                    <span>Public Address (ไม่บังคับ)</span>
+                    <input value={publicAddress} onChange={(event) => setPublicAddress(event.target.value)} placeholder="Public address เท่านั้น" />
+                  </label>
+                  <label className="form-field full">
+                    <span>ตำแหน่งข้อมูลกู้คืน</span>
+                    <input value={recoveryLocation} onChange={(event) => setRecoveryLocation(event.target.value)} placeholder="เช่น ซองปิดผนึกในตู้นิรภัยธนาคาร (ห้ามพิมพ์ Seed Phrase)" />
+                  </label>
+                </div>
+                <div className="secret-warning">
+                  <KeyRound size={17} />
+                  <div><strong>ห้ามบันทึกข้อมูลลับในระบบนี้</strong><span>อย่ากรอก Seed Phrase, Private Key, PIN หรือ Password ให้ระบุเฉพาะตำแหน่งที่เก็บข้อมูลกู้คืน</span></div>
+                </div>
+              </div>
+            )}
+
+            <div className="family-sharing-note">
+              {isPersonal ? <Users size={17} /> : <BriefcaseBusiness size={17} />}
+              <div>
+                <strong>{isPersonal ? 'แชร์ใน Family Vault เป็นค่าเริ่มต้น' : 'บันทึกในพื้นที่ Work'}</strong>
+                <span>
+                  {isPersonal
+                    ? 'สมาชิกครอบครัวที่ยืนยันแล้วทุกคนสามารถดูรายการและตำแหน่งจัดเก็บนี้ได้'
+                    : 'ข้อมูลนี้แยกจาก Family Vault และไม่แสดงในภาพรวมครอบครัว'}
+                </span>
+              </div>
             </div>
 
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setShowEntry(false)}>ยกเลิก</button>
-              <button type="submit" className="primary-button" disabled={!entryName.trim() || !entryAmount}>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={!entryName.trim() || !entryAmount || (entryKind === 'asset' && !assetLocation.trim())}
+              >
                 <Save size={17} /> บันทึกรายการ
               </button>
             </div>
