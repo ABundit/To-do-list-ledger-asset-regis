@@ -1,4 +1,6 @@
-import { useState, type ChangeEvent } from 'react'
+import { useState, type ChangeEvent, useEffect, useRef } from 'react'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -128,6 +130,10 @@ function App() {
   const [completedTasks, setCompletedTasks] = useState<number[]>([])
   const [showUpload, setShowUpload] = useState(false)
   const [showEntry, setShowEntry] = useState(false)
+  const [showTaskForm, setShowTaskForm] = useState(false)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [newTaskTag, setNewTaskTag] = useState('ทั่วไป')
+  const [newTaskUrgent, setNewTaskUrgent] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [member, setMember] = useState('somchai')
   const [entryKind, setEntryKind] = useState<EntryKind>('expense')
@@ -135,6 +141,30 @@ function App() {
   const [entryAmount, setEntryAmount] = useState('')
   const [entryCategory, setEntryCategory] = useState('ทั่วไป')
   const [savedMessage, setSavedMessage] = useState('')
+  const [period, setPeriod] = useState<'monthly' | '6m' | 'annual'>('6m')
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [ledgerFilter, setLedgerFilter] = useState<'all' | 'income' | 'expense' | 'linked'>('all')
+  const [showReport, setShowReport] = useState(false)
+  const [showTxDetail, setShowTxDetail] = useState(false)
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
+  const [showAssetDetail, setShowAssetDetail] = useState(false)
+  const [selectedAsset, setSelectedAsset] = useState<AssetRow | null>(null)
+  const [showExport, setShowExport] = useState(false)
+  const [showShare, setShowShare] = useState(false)
+  const [showDocViewer, setShowDocViewer] = useState(false)
+  const [selectedDocAsset, setSelectedDocAsset] = useState<AssetRow | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
   const [customTransactions, setCustomTransactions] = useState<Record<Mode, Transaction[]>>({
     personal: [],
     work: [],
@@ -147,9 +177,16 @@ function App() {
     personal: [],
     work: [],
   })
+  const [customTasks, setCustomTasks] = useState<Record<Mode, { id: number; title: string; meta: string; tag: string; urgent: boolean }[]>>({
+    personal: [],
+    work: [],
+  })
+
+  const allPersonalTasks = [...customTasks.personal, ...personalTasks]
+  const allWorkTasks = [...customTasks.work, ...workTasks]
 
   const isPersonal = mode === 'personal'
-  const tasks = isPersonal ? personalTasks : workTasks
+  const tasks = isPersonal ? allPersonalTasks : allWorkTasks
   const transactions = [
     ...customTransactions[mode],
     ...(isPersonal ? personalTransactions : workTransactions),
@@ -179,18 +216,218 @@ function App() {
   const investmentTotal = (isPersonal ? 1_247_830 : 684_250) + customInvestmentTotal
   const baht = (value: number) => `฿${value.toLocaleString('th-TH')}`
 
+  const generatePDF = async (elementId: string, filename: string) => {
+    console.log('PDF button clicked')
+    const element = document.getElementById(elementId)
+    if (!element) {
+      console.error('Element not found for PDF generation:', elementId)
+      setSavedMessage('ไม่พบเนื้อหาที่ต้องการส่งออก')
+      return
+    }
+    try {
+      console.log('Starting PDF generation...')
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: true,
+      })
+      const imgData = canvas.toDataURL('image/jpeg', 0.98)
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = canvas.width
+      const imgHeight = canvas.height
+      const ratio = Math.min(pageWidth / imgWidth, pageHeight / imgHeight)
+      const finalWidth = imgWidth * ratio
+      const finalHeight = imgHeight * ratio
+      pdf.addImage(imgData, 'JPEG', 0, 0, finalWidth, finalHeight)
+      pdf.save(filename)
+      console.log('PDF generated successfully')
+      setSavedMessage('ส่งออก PDF เรียบร้อยแล้ว')
+    } catch (error) {
+      console.error('PDF generation failed:', error)
+      setSavedMessage('เกิดข้อผิดพลาดในการส่งออก PDF')
+    }
+  }
+
+  const generateAssetPDF = (asset: AssetRow) => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      pdf.setFontSize(16)
+      pdf.text('รายละเอียดทรัพย์สิน', 14, 20)
+      pdf.setFontSize(11)
+      pdf.text(`ชื่อ: ${asset.name}`, 14, 35)
+      pdf.text(`หมวดหมู่: ${asset.category}`, 14, 45)
+      pdf.text(`มูลค่า: ${asset.value}`, 14, 55)
+      pdf.text(`อัปเดตล่าสุด: ${asset.updated}`, 14, 65)
+      pdf.text(`เอกสาร: ${asset.docs} ไฟล์`, 14, 75)
+      pdf.save(`${asset.name}-รายละเอียด.pdf`)
+      setSavedMessage('ส่งออก PDF เรียบร้อยแล้ว')
+    } catch (error) {
+      console.error('Asset PDF generation failed:', error)
+      setSavedMessage('เกิดข้อผิดพลาดในการส่งออก PDF')
+    }
+  }
+
+  const generateIncomePDF = () => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      pdf.setFontSize(16)
+      pdf.text('รายงานรายรับ', 14, 20)
+      pdf.setFontSize(11)
+      const incomeTxns = transactions.filter((t) => t.tone === 'income')
+      let y = 35
+      incomeTxns.forEach((t) => {
+        pdf.text(`${t.date}  ${t.title}  ${t.amount}`, 14, y)
+        y += 10
+      })
+      pdf.setFontSize(12)
+      pdf.text(`รวมรายรับ: ${baht(currentTotals.income)}`, 14, y + 5)
+      pdf.save('รายรับ.pdf')
+      setSavedMessage('ส่งออก PDF เรียบร้อยแล้ว')
+    } catch (error) {
+      console.error('Income PDF generation failed:', error)
+      setSavedMessage('เกิดข้อผิดพลาดในการส่งออก PDF')
+    }
+  }
+
+  const generateExpensePDF = () => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      pdf.setFontSize(16)
+      pdf.text('รายงานรายจ่าย', 14, 20)
+      pdf.setFontSize(11)
+      const expenseTxns = transactions.filter((t) => t.tone === 'expense')
+      let y = 35
+      expenseTxns.forEach((t) => {
+        pdf.text(`${t.date}  ${t.title}  ${t.amount}`, 14, y)
+        y += 10
+      })
+      pdf.setFontSize(12)
+      pdf.text(`รวมรายจ่าย: ${baht(currentTotals.expense)}`, 14, y + 5)
+      pdf.save('รายจ่าย.pdf')
+      setSavedMessage('ส่งออก PDF เรียบร้อยแล้ว')
+    } catch (error) {
+      console.error('Expense PDF generation failed:', error)
+      setSavedMessage('เกิดข้อผิดพลาดในการส่งออก PDF')
+    }
+  }
+
+  const generateAssetRegistryPDF = () => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      pdf.setFontSize(16)
+      pdf.text('ทะเบียนทรัพย์สิน', 14, 20)
+      pdf.setFontSize(11)
+      let y = 35
+      assets.forEach((asset) => {
+        pdf.text(`${asset.icon} ${asset.name}  ${asset.category}  ${asset.value}  อัปเดต: ${asset.updated}`, 14, y)
+        y += 10
+      })
+      pdf.setFontSize(12)
+      pdf.text(`มูลค่ารวม: ${baht(assetRegistryTotal)}`, 14, y + 5)
+      pdf.save('ทะเบียนทรัพย์สิน.pdf')
+      setSavedMessage('ส่งออก PDF เรียบร้อยแล้ว')
+    } catch (error) {
+      console.error('Asset registry PDF generation failed:', error)
+      setSavedMessage('เกิดข้อผิดพลาดในการส่งออก PDF')
+    }
+  }
+
+  const generateLinkedPDF = () => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      pdf.setFontSize(16)
+      pdf.text('รายการที่เชื่อมโยง', 14, 20)
+      pdf.setFontSize(11)
+      const linkedTxns = transactions.filter((t) => t.linkedTo)
+      let y = 35
+      linkedTxns.forEach((t) => {
+        pdf.text(`${t.date}  ${t.title}  ${t.amount}  ${t.linkedTo === 'asset' ? 'ทะเบียนทรัพย์สิน' : 'พอร์ตลงทุน'}`, 14, y)
+        y += 10
+      })
+      pdf.setFontSize(12)
+      pdf.text(`รวมที่เชื่อมโยง: ${baht(currentTotals.linked)}`, 14, y + 5)
+      pdf.save('รายการที่เชื่อมโยง.pdf')
+      setSavedMessage('ส่งออก PDF เรียบร้อยแล้ว')
+    } catch (error) {
+      console.error('Linked PDF generation failed:', error)
+      setSavedMessage('เกิดข้อผิดพลาดในการส่งออก PDF')
+    }
+  }
+
+  const generateInvestmentPDF = () => {
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      pdf.setFontSize(16)
+      pdf.text('พอร์ตการลงทุน', 14, 20)
+      pdf.setFontSize(11)
+      let y = 35
+      const allInvestments = [...customInvestments[mode]]
+      const defaultInvestments = isPersonal
+        ? [['Bitcoin', 'สินทรัพย์ดิจิทัล', '฿523,800'], ['กองทุน SET50', 'กองทุนรวม', '฿349,390'], ['หุ้นสหกรณ์', 'เงินฝาก/สหกรณ์', '฿249,560']]
+        : [['PTT', 'หุ้นไทย', '฿259,500'], ['Global Equity', 'หุ้นต่างประเทศ', '฿184,750'], ['กองทุน RMF', 'กองทุนรวม', '฿171,060']]
+      allInvestments.forEach((item) => {
+        pdf.text(`${item.name}  ${item.category}  ${item.amount}  ${item.date}`, 14, y)
+        y += 10
+      })
+      defaultInvestments.forEach(([name, category, amount]) => {
+        pdf.text(`${name}  ${category}  ${amount}`, 14, y)
+        y += 10
+      })
+      pdf.setFontSize(12)
+      pdf.text(`มูลค่าพอร์ตรวม: ${baht(investmentTotal)}`, 14, y + 5)
+      pdf.save('พอร์ตการลงทุน.pdf')
+      setSavedMessage('ส่งออก PDF เรียบร้อยแล้ว')
+    } catch (error) {
+      console.error('Investment PDF generation failed:', error)
+      setSavedMessage('เกิดข้อผิดพลาดในการส่งออก PDF')
+    }
+  }
+
+  const periodChartData = {
+    monthly: {
+      labels: ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.'],
+      income: [42000, 45000, 48000, 47000, 50000, 48260, 48260],
+      expense: [18000, 19500, 21000, 20500, 22000, 21840, 21840],
+    },
+    '6m': {
+      labels: ['ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.'],
+      income: [228000, 235000, 240000, 245000, 242000, 241300],
+      expense: [115000, 118000, 120000, 122000, 121000, 120000],
+    },
+    annual: {
+      labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+      income: [700000, 750000, 780000, 800000],
+      expense: [450000, 470000, 460000, 480000],
+    },
+  }
+
+  const currentChart = periodChartData[period]
+  const maxChartValue = Math.max(...currentChart.income, ...currentChart.expense)
+
+  const linkedTransactions = transactions.filter((t) => t.linkedTo)
+  const linkedTotal = linkedTransactions.reduce((sum, t) => sum + (t.rawAmount ?? 0), 0)
+
+  const periodTotals = {
+    monthly: { income: monthlyIncome, expense: monthlyExpense, linked: linkedTotal },
+    '6m': { income: monthlyIncome * 6, expense: monthlyExpense * 6, linked: linkedTotal * 6 },
+    annual: { income: monthlyIncome * 12, expense: monthlyExpense * 12, linked: linkedTotal * 12 },
+  }
+  const currentTotals = periodTotals[period]
+
   const totals = isPersonal
     ? [
             { label: 'ทรัพย์สินสุทธิ', value: baht(5_482_350 + customAssetTotal + customInvestmentTotal), trend: '+6.4%', type: 'up', note: 'จากเดือนที่แล้ว' },
-            { label: 'รายรับเดือนนี้', value: baht(monthlyIncome), trend: '+8.2%', type: 'up', note: 'รวมทุกแหล่งรายได้' },
-            { label: 'รายจ่ายเดือนนี้', value: baht(monthlyExpense), trend: '−3.1%', type: 'down', note: 'รวมรายการเชื่อมโยง' },
-            { label: 'งานที่ต้องทำ', value: '8 งาน', trend: '3', type: 'task', note: 'งานสำคัญวันนี้' },
+            { label: 'รายรับ', value: baht(currentTotals.income), trend: '+8.2%', type: 'up', note: `${period === 'monthly' ? 'รายเดือน' : period === '6m' ? '6 เดือน' : 'รายปี'}` },
+            { label: 'รายจ่าย', value: baht(currentTotals.expense), trend: '−3.1%', type: 'down', note: 'รวมรายการเชื่อมโยง' },
+            { label: 'เชื่อมโยง', value: baht(currentTotals.linked), trend: 'ลิงก์', type: 'up', note: 'ทรัพย์สิน/การลงทุน' },
           ]
     : [
-            { label: 'รายรับจากงาน', value: baht(monthlyIncome), trend: '+4.1%', type: 'up', note: 'จากเดือนที่แล้ว' },
-            { label: 'ค่าใช้จ่ายงาน', value: baht(monthlyExpense), trend: '−2.6%', type: 'down', note: 'รวมรายการเชื่อมโยง' },
+            { label: 'รายรับจากงาน', value: baht(currentTotals.income), trend: '+4.1%', type: 'up', note: `${period === 'monthly' ? 'รายเดือน' : period === '6m' ? '6 เดือน' : 'รายปี'}` },
+            { label: 'ค่าใช้จ่ายงาน', value: baht(currentTotals.expense), trend: '−2.6%', type: 'down', note: 'รวมรายการเชื่อมโยง' },
+            { label: 'เชื่อมโยง', value: baht(currentTotals.linked), trend: 'ลิงก์', type: 'up', note: 'ทรัพย์สิน/การลงทุน' },
             { label: 'งบโครงการคงเหลือ', value: '฿184,500', trend: '72%', type: 'up', note: 'ของงบโครงการ' },
-            { label: 'งานที่ต้องทำ', value: '11 งาน', trend: '4', type: 'task', note: 'งานเร่งด่วนวันนี้' },
           ]
 
   const handleFiles = (event: ChangeEvent<HTMLInputElement>) => {
@@ -275,8 +512,28 @@ function App() {
     setShowEntry(false)
   }
 
+  const saveTask = () => {
+    if (!newTaskTitle.trim()) return
+    const newTask = {
+      id: Date.now(),
+      title: newTaskTitle.trim(),
+      meta: 'วันนี้ · ยังไม่กำหนดเวลา',
+      tag: newTaskTag,
+      urgent: newTaskUrgent,
+    }
+    setCustomTasks((current) => ({
+      ...current,
+      [mode]: [newTask, ...current[mode]],
+    }))
+    setNewTaskTitle('')
+    setNewTaskTag('ทั่วไป')
+    setNewTaskUrgent(false)
+    setShowTaskForm(false)
+    setSavedMessage(`เพิ่มงานใหม่ “${newTaskTitle.trim()}” แล้ว`)
+  }
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={menuRef}>
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
@@ -387,16 +644,6 @@ function App() {
                   : 'นี่คือภาพรวมงานและค่าใช้จ่าย ประจำวันจันทร์ที่ 27 กรกฎาคม 2569'}
               </p>
             </div>
-            {activeNav !== 'tasks' && (
-              <button className="primary-button" onClick={() => openEntryForm()}>
-                <Plus size={18} />
-                {activeNav === 'assets'
-                  ? 'เพิ่มทรัพย์สิน'
-                  : activeNav === 'investment'
-                    ? 'เพิ่มการลงทุน'
-                    : 'เพิ่มรายการใหม่'}
-              </button>
-            )}
           </section>
 
           {savedMessage && (
@@ -413,14 +660,39 @@ function App() {
           {activeNav === 'overview' && (
           <>
           <section className="stat-grid" aria-label="ข้อมูลสรุป">
-            {totals.map((stat, index) => (
-              <article className={`stat-card stat-${index + 1}`} key={stat.label}>
-                <div className="stat-card-top">
-                  <span>{stat.label}</span>
-                  <button aria-label={`ดูรายละเอียด${stat.label}`}>
-                    <MoreHorizontal size={18} />
-                  </button>
-                </div>
+            {totals.map((stat, index) => {
+                const getNavForStat = (label: string) => {
+                  if (label.includes('ทรัพย์สิน')) return 'assets'
+                  if (label.includes('รายรับ')) return 'ledger'
+                  if (label.includes('รายจ่าย')) return 'ledger'
+                  if (label.includes('เชื่อม')) return 'investment'
+                  if (label.includes('งบ')) return 'tasks'
+                  return 'overview'
+                }
+                const exportStatPDF = (label: string) => {
+                  if (label.includes('ทรัพย์สิน')) generateAssetRegistryPDF()
+                  else if (label.includes('รายรับ')) generateIncomePDF()
+                  else if (label.includes('รายจ่าย')) generateExpensePDF()
+                  else if (label.includes('เชื่อม')) generateLinkedPDF()
+                  else generateAssetRegistryPDF()
+                }
+                return (
+                  <article className={`stat-card stat-${index + 1}`} key={stat.label}>
+                    <div className="stat-card-top">
+                      <span>{stat.label}</span>
+                      <div className="dropdown">
+                        <button aria-label={`ตัวเลือก${stat.label}`} onClick={() => setOpenMenu(openMenu === `stat-${index}` ? null : `stat-${index}`)}>
+                          <MoreHorizontal size={18} />
+                        </button>
+                        {openMenu === `stat-${index}` && (
+                          <div className="dropdown-menu">
+                            <button className="dropdown-item" onClick={() => { setOpenMenu(null); setActiveNav(getNavForStat(stat.label)) }}>ดูรายละเอียด</button>
+                            <button className="dropdown-item" onClick={() => { setOpenMenu(null); exportStatPDF(stat.label) }}>ส่งออก PDF</button>
+                            <button className="dropdown-item" onClick={() => { setOpenMenu(null); setShowShare(true) }}>แชร์</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                 <strong>{stat.value}</strong>
                 <div className="stat-footer">
                   <span className={`trend trend-${stat.type}`}>
@@ -431,9 +703,10 @@ function App() {
                   </span>
                   <small>{stat.note}</small>
                 </div>
-                <div className="stat-ornament" />
-              </article>
-            ))}
+<div className="stat-ornament" />
+               </article>
+             );
+             })}
           </section>
 
           <section className="dashboard-grid">
@@ -443,35 +716,59 @@ function App() {
                   <span className="panel-kicker">กระแสเงินสด</span>
                   <h2>รายรับและรายจ่าย</h2>
                 </div>
-                <button className="period-button">
-                  6 เดือนล่าสุด <ChevronDown size={14} />
-                </button>
+                <div className="dropdown">
+                  <button className="period-button" onClick={() => setOpenMenu(openMenu === 'period' ? null : 'period')}>
+                    {period === 'monthly' ? 'รายเดือน' : period === '6m' ? '6 เดือนล่าสุด' : 'รายปี'} <ChevronDown size={14} />
+                  </button>
+                  {openMenu === 'period' && (
+                    <div className="dropdown-menu">
+                      {(['monthly', '6m', 'annual'] as const).map((p) => (
+                        <button
+                          key={p}
+                          className={`dropdown-item ${period === p ? 'active' : ''}`}
+                          onClick={() => { setPeriod(p); setOpenMenu(null) }}
+                        >
+                          {p === 'monthly' ? 'รายเดือน' : p === '6m' ? '6 เดือน' : 'รายปี'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="cash-summary">
                 <div>
                   <span className="dot income-dot" />
                   <small>รายรับทั้งหมด</small>
-                  <strong>{isPersonal ? '฿284,650' : '฿358,200'}</strong>
+                  <strong>{baht(currentTotals.income)}</strong>
                 </div>
                 <div>
                   <span className="dot expense-dot" />
                   <small>รายจ่ายทั้งหมด</small>
-                  <strong>{isPersonal ? '฿132,480' : '฿76,840'}</strong>
+                  <strong>{baht(currentTotals.expense)}</strong>
+                </div>
+                <div>
+                  <span className="dot" style={{ background: '#a26925' }} />
+                  <small>เชื่อมโยง</small>
+                  <strong>{baht(currentTotals.linked)}</strong>
                 </div>
                 <div className="net-badge">
-                  <TrendingUp size={15} /> สุทธิ +{isPersonal ? '฿152,170' : '฿281,360'}
+                  <TrendingUp size={15} /> สุทธิ {baht(currentTotals.income - currentTotals.expense)}
                 </div>
               </div>
-              <div className="chart" aria-label="กราฟรายรับรายจ่าย 6 เดือน">
-                {[58, 72, 64, 85, 76, 92].map((height, index) => (
-                  <div className="chart-month" key={index}>
-                    <div className="bar-group">
-                      <span className="bar income-bar" style={{ height: `${height}%` }} />
-                      <span className="bar expense-bar" style={{ height: `${Math.max(28, height - 31 + (index % 2) * 10)}%` }} />
+              <div className="chart" aria-label={`กราฟรายรับรายจ่าย ${period === 'monthly' ? 'รายเดือน' : period === '6m' ? '6 เดือน' : 'รายปี'}`}>
+                {currentChart.labels.map((label, index) => {
+                  const incomeHeight = Math.max(10, (currentChart.income[index] / maxChartValue) * 100)
+                  const expenseHeight = Math.max(10, (currentChart.expense[index] / maxChartValue) * 100)
+                  return (
+                    <div className="chart-month" key={label}>
+                      <div className="bar-group">
+                        <span className="bar income-bar" style={{ height: `${incomeHeight}%` }} />
+                        <span className="bar expense-bar" style={{ height: `${expenseHeight}%` }} />
+                      </div>
+                      <small>{label}</small>
                     </div>
-                    <small>{['ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.'][index]}</small>
-                  </div>
-                ))}
+                  )
+                })}
                 <span className="chart-line line-one" />
                 <span className="chart-line line-two" />
                 <span className="chart-line line-three" />
@@ -522,7 +819,7 @@ function App() {
                   )
                 })}
               </div>
-              <button className="add-task">
+              <button className="add-task" onClick={() => setShowTaskForm(true)}>
                 <Plus size={16} /> เพิ่มงานใหม่
               </button>
             </article>
@@ -535,27 +832,31 @@ function App() {
                   <span className="panel-kicker">อัปเดตล่าสุด</span>
                   <h2>รายการเคลื่อนไหว</h2>
                 </div>
-                <button className="text-button">
+                <button className="text-button" onClick={() => setActiveNav('ledger')}>
                   ดูทั้งหมด <ArrowUpRight size={15} />
                 </button>
               </div>
-              <div className="transaction-list">
-                {transactions.map((transaction) => {
-                  const Icon = transaction.icon
-                  return (
-                    <div className="transaction-row" key={transaction.title}>
-                      <span className={`transaction-icon ${transaction.tone}`}>
-                        <Icon size={18} />
-                      </span>
-                      <div>
-                        <strong>{transaction.title}</strong>
-                        <small>{transaction.date}</small>
-                      </div>
-                      <strong className={transaction.tone}>{transaction.amount}</strong>
-                    </div>
-                  )
-                })}
-              </div>
+               <div className="transaction-list">
+                 {transactions.map((transaction) => {
+                   const Icon = transaction.icon
+                   return (
+                     <div
+                       className="transaction-row clickable"
+                       key={transaction.title}
+                       onClick={() => { setSelectedTx(transaction); setShowTxDetail(true) }}
+                     >
+                       <span className={`transaction-icon ${transaction.tone}`}>
+                         <Icon size={18} />
+                       </span>
+                       <div>
+                         <strong>{transaction.title}</strong>
+                         <small>{transaction.date}</small>
+                       </div>
+                       <strong className={transaction.tone}>{transaction.amount}</strong>
+                     </div>
+                   )
+                 })}
+               </div>
             </article>
 
             <article className="panel investment-panel">
@@ -564,9 +865,18 @@ function App() {
                   <span className="panel-kicker">ภาพรวมพอร์ต</span>
                   <h2>การลงทุน</h2>
                 </div>
-                <button className="icon-button subtle" aria-label="ตัวเลือกการลงทุน">
-                  <MoreHorizontal size={18} />
-                </button>
+                <div className="dropdown">
+                  <button className="icon-button subtle" aria-label="ตัวเลือกการลงทุน" onClick={() => setOpenMenu(openMenu === 'investment' ? null : 'investment')}>
+                    <MoreHorizontal size={18} />
+                  </button>
+{openMenu === 'investment' && (
+                       <div className="dropdown-menu">
+                         <button className="dropdown-item" onClick={() => { setOpenMenu(null); setActiveNav('investment') }}>ดูพอร์ตเต็ม</button>
+                         <button className="dropdown-item" onClick={() => { setOpenMenu(null); openEntryForm('investment') }}>เพิ่มการลงทุน</button>
+                         <button className="dropdown-item" onClick={() => { setOpenMenu(null); generateInvestmentPDF() }}>ส่งออก PDF</button>
+                       </div>
+                   )}
+                </div>
               </div>
               <div className="portfolio-total">
                 <div>
@@ -616,6 +926,18 @@ function App() {
                 <button className="text-button" onClick={() => setActiveNav('assets')}>
                   ดูทะเบียนทั้งหมด <ArrowUpRight size={15} />
                 </button>
+                <div className="dropdown">
+                  <button className="icon-button subtle" aria-label="ตัวเลือกทรัพย์สิน" onClick={() => setOpenMenu(openMenu === 'assets' ? null : 'assets')}>
+                    <MoreHorizontal size={18} />
+                  </button>
+{openMenu === 'assets' && (
+                       <div className="dropdown-menu">
+                         <button className="dropdown-item" onClick={() => { setOpenMenu(null); setActiveNav('assets') }}>ดูรีพอร์ต</button>
+                         <button className="dropdown-item" onClick={() => { setOpenMenu(null); generateAssetRegistryPDF() }}>ส่งออก PDF</button>
+                         <button className="dropdown-item" onClick={() => { setOpenMenu(null); openEntryForm('asset') }}>เพิ่มทรัพย์สิน</button>
+                       </div>
+                   )}
+                </div>
               </div>
             </div>
             <div className="asset-table">
@@ -625,22 +947,38 @@ function App() {
                 <span>อัปเดตล่าสุด</span>
                 <span>เอกสาร</span>
               </div>
-              {assets.map((asset) => (
-                <div className="asset-row" key={asset.name}>
-                  <div className="asset-name">
-                    <span className="asset-emoji">{asset.icon}</span>
-                    <div>
-                      <strong>{asset.name}</strong>
-                      <small>{asset.category}</small>
+{assets.map((asset) => (
+                  <div
+                    className="asset-row clickable"
+                    key={asset.name}
+                    onClick={() => { setSelectedAsset(asset); setShowAssetDetail(true) }}
+                  >
+                    <div className="asset-name">
+                      <span className="asset-emoji">{asset.icon}</span>
+                      <div>
+                        <strong>{asset.name}</strong>
+                        <small>{asset.category}</small>
+                      </div>
+                      <div className="dropdown">
+                        <button className="icon-button subtle" aria-label="ตัวเลือกทรัพย์สิน" onClick={(event) => { event.stopPropagation(); setOpenMenu(openMenu === `asset-${asset.name}` ? null : `asset-${asset.name}`) }}>
+                          <MoreHorizontal size={16} />
+                        </button>
+                        {openMenu === `asset-${asset.name}` && (
+                          <div className="dropdown-menu">
+                            <button className="dropdown-item" onClick={(event) => { event.stopPropagation(); setOpenMenu(null); setSelectedAsset(asset); setShowAssetDetail(true) }}>รายละเอียด</button>
+                            <button className="dropdown-item" onClick={(event) => { event.stopPropagation(); setOpenMenu(null); generateAssetPDF(asset) }}>ส่งออก PDF</button>
+                            <button className="dropdown-item" onClick={(event) => { event.stopPropagation(); setOpenMenu(null); setSelectedDocAsset(asset); setShowDocViewer(true) }}>เอกสาร</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
+                   <strong>{asset.value}</strong>
+                   <span>{asset.updated}</span>
+                   <button className="doc-pill" onClick={(event) => { event.stopPropagation(); setSelectedDocAsset(asset); setShowDocViewer(true) }}>
+                     <FolderOpen size={15} /> {asset.docs} ไฟล์
+                   </button>
                   </div>
-                  <strong>{asset.value}</strong>
-                  <span>{asset.updated}</span>
-                  <button className="doc-pill" onClick={() => setShowUpload(true)}>
-                    <FolderOpen size={15} /> {asset.docs} ไฟล์
-                  </button>
-                </div>
-              ))}
+                ))}
             </div>
           </section>
           </>
@@ -649,9 +987,9 @@ function App() {
           {activeNav === 'tasks' && (
             <section className="focus-page">
               <div className="focus-stat-grid">
-                <article><span>งานทั้งหมด</span><strong>{isPersonal ? 8 : 11}</strong><small>รายการ</small></article>
+                <article><span>งานทั้งหมด</span><strong>{tasks.length}</strong><small>รายการ</small></article>
                 <article><span>เสร็จแล้ววันนี้</span><strong>{completedTasks.length}</strong><small>จาก {tasks.length} งานวันนี้</small></article>
-                <article><span>งานเร่งด่วน</span><strong>{isPersonal ? 3 : 4}</strong><small>ควรจัดการก่อน</small></article>
+                <article><span>งานเร่งด่วน</span><strong>{tasks.filter((task) => task.urgent).length}</strong><small>ควรจัดการก่อน</small></article>
               </div>
               <article className="panel focus-panel task-focus-panel">
                 <div className="panel-heading">
@@ -659,7 +997,7 @@ function App() {
                     <span className="panel-kicker">{isPersonal ? 'งานส่วนตัว' : 'งานที่ทำงาน'}</span>
                     <h2>รายการสิ่งที่ต้องทำวันนี้</h2>
                   </div>
-                  <button className="primary-button"><Plus size={17} /> เพิ่มงาน</button>
+                  <button className="primary-button" onClick={() => setShowTaskForm(true)}><Plus size={17} /> เพิ่มงาน</button>
                 </div>
                 <div className="task-progress focus-progress">
                   <div><strong>{completedTasks.length}/{tasks.length}</strong><span>เสร็จแล้ววันนี้</span></div>
@@ -694,28 +1032,36 @@ function App() {
 
           {activeNav === 'ledger' && (
             <section className="focus-page">
+              {(() => {
+                const filteredIncomes = transactions.filter((t) => t.tone === 'income')
+                const filteredExpenses = transactions.filter((t) => t.tone === 'expense')
+                const linkedTransactions = transactions.filter((t) => t.linkedTo)
+                const totalIncome = filteredIncomes.reduce((sum, t) => sum + (t.rawAmount ?? 0), 0)
+                const totalExpense = filteredExpenses.reduce((sum, t) => sum + (t.rawAmount ?? 0), 0)
+                const totalLinked = linkedTransactions.reduce((sum, t) => sum + (t.rawAmount ?? 0), 0)
+                const displayTransactions = ledgerFilter === 'income' ? filteredIncomes : ledgerFilter === 'expense' ? filteredExpenses : ledgerFilter === 'linked' ? linkedTransactions : transactions
+                return (
+                  <>
               <div className="focus-stat-grid ledger-stats">
-                <article><span>รายรับเดือนนี้</span><strong>{baht(monthlyIncome)}</strong><small className="income">+8.2% จากเดือนก่อน</small></article>
-                <article><span>รายจ่ายเดือนนี้</span><strong>{baht(monthlyExpense)}</strong><small className="expense">รวมรายการเชื่อมโยง</small></article>
-                <article><span>คงเหลือสุทธิ</span><strong>{baht(monthlyIncome - monthlyExpense)}</strong><small>กระแสเงินสดเดือนนี้</small></article>
+                <article><span>รายรับ</span><strong className="income">{baht(totalIncome)}</strong><small>รวมทุกแหล่งรายได้</small></article>
+                <article><span>รายจ่าย</span><strong className="expense">{baht(totalExpense)}</strong><small>รวมรายการเชื่อมโยง</small></article>
+                <article><span>เชื่อมโยง</span><strong>{baht(totalLinked)}</strong><small>รายการที่เชื่อมกับทรัพย์สิน/การลงทุน</small></article>
+                <article><span>สุทธิ</span><strong className="income">{baht(totalIncome - totalExpense)}</strong><small>กระแสเงินสด</small></article>
               </div>
               <div className="ledger-toolbar">
                 <div className="ledger-tabs">
-                  <button className="active">ทั้งหมด</button>
-                  <button>รายรับ</button>
-                  <button>รายจ่าย</button>
-                  <button>เชื่อมโยง</button>
+                  <button className={ledgerFilter === 'all' ? 'active' : ''} onClick={() => setLedgerFilter('all')}>ทั้งหมด</button>
+                  <button className={ledgerFilter === 'income' ? 'active' : ''} onClick={() => setLedgerFilter('income')}>รายรับ</button>
+                  <button className={ledgerFilter === 'expense' ? 'active' : ''} onClick={() => setLedgerFilter('expense')}>รายจ่าย</button>
+                  <button className={ledgerFilter === 'linked' ? 'active' : ''} onClick={() => setLedgerFilter('linked')}>เชื่อมโยง</button>
                 </div>
-                <div>
-                  <button className="secondary-button" onClick={() => openEntryForm('income')}><Plus size={15} /> เพิ่มรายรับ</button>
-                  <button className="primary-button" onClick={() => openEntryForm('expense')}><Plus size={15} /> เพิ่มรายจ่าย</button>
-                </div>
+                <button className="primary-button" onClick={() => openEntryForm()}><Plus size={15} /> เพิ่มรายการ</button>
               </div>
               <article className="panel ledger-panel">
                 <div className="ledger-table-head">
                   <span>วันที่</span><span>รายการ</span><span>หมวดหมู่</span><span>เชื่อมโยง</span><span>จำนวนเงิน</span>
                 </div>
-                {transactions.map((transaction, index) => {
+                {displayTransactions.map((transaction, index) => {
                   const Icon = transaction.icon
                   return (
                     <div className={`ledger-row ${transaction.id ? 'new-entry' : ''}`} key={transaction.id ?? `${transaction.title}-${index}`}>
@@ -737,6 +1083,9 @@ function App() {
                   )
                 })}
               </article>
+                  </>
+                )
+              })()}
             </section>
           )}
 
@@ -825,10 +1174,22 @@ function App() {
                       <div className="asset-name">
                         <span className="asset-emoji">{asset.icon}</span>
                         <div><strong>{asset.name}</strong><small>{asset.category}</small></div>
+                        <div className="dropdown">
+                          <button className="icon-button subtle" aria-label="ตัวเลือกทรัพย์สิน" onClick={(event) => { event.stopPropagation(); setOpenMenu(openMenu === `asset-${asset.name}` ? null : `asset-${asset.name}`) }}>
+                            <MoreHorizontal size={16} />
+                          </button>
+                          {openMenu === `asset-${asset.name}` && (
+                            <div className="dropdown-menu">
+                              <button className="dropdown-item" onClick={(event) => { event.stopPropagation(); setOpenMenu(null); setSelectedAsset(asset); setShowAssetDetail(true) }}>รายละเอียด</button>
+                              <button className="dropdown-item" onClick={(event) => { event.stopPropagation(); setOpenMenu(null); generateAssetPDF(asset) }}>ส่งออก PDF</button>
+                              <button className="dropdown-item" onClick={(event) => { event.stopPropagation(); setOpenMenu(null); setSelectedDocAsset(asset); setShowDocViewer(true) }}>เอกสาร</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <strong>{asset.value}</strong>
                       <span>{asset.updated}</span>
-                      <button className="doc-pill" onClick={() => setShowUpload(true)}><FolderOpen size={15} /> {asset.docs} ไฟล์</button>
+                      <button className="doc-pill" onClick={(event) => { event.stopPropagation(); setSelectedDocAsset(asset); setShowDocViewer(true) }}><FolderOpen size={15} /> {asset.docs} ไฟล์</button>
                     </div>
                   ))}
                 </div>
@@ -1015,11 +1376,298 @@ function App() {
                 <Save size={17} /> บันทึกรายการ
               </button>
             </div>
-          </form>
-        </div>
-      )}
-    </div>
-  )
-}
+           </form>
+         </div>
+       )}
+
+       {showTaskForm && (
+         <div className="modal-backdrop" onMouseDown={() => setShowTaskForm(false)}>
+           <section className="upload-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+             <div className="modal-heading">
+               <div>
+                 <span className="panel-kicker">งานใหม่</span>
+                 <h2>เพิ่มสิ่งที่ต้องทำ</h2>
+                 <p>กรอกข้อมูลงานที่ต้องจัดการ</p>
+               </div>
+               <button className="icon-button" aria-label="ปิด" onClick={() => setShowTaskForm(false)}>
+                 <X size={20} />
+               </button>
+             </div>
+             <div className="form-grid">
+               <label className="form-field full">
+                 <span>ชื่องาน</span>
+                 <input
+                   autoFocus
+                   required
+                   value={newTaskTitle}
+                   onChange={(event) => setNewTaskTitle(event.target.value)}
+                   placeholder="เช่น จ่ายค่าไฟประจำเดือน"
+                 />
+               </label>
+               <label className="form-field">
+                 <span>หมวดหมู่</span>
+                 <select value={newTaskTag} onChange={(event) => setNewTaskTag(event.target.value)}>
+                   <option>ทั่วไป</option>
+                   <option>บ้าน</option>
+                   <option>การลงทุน</option>
+                   <option>สุขภาพ</option>
+                   <option>งาน</option>
+                   <option>ประชุม</option>
+                   <option>เอกสาร</option>
+                 </select>
+               </label>
+               <label className="form-field">
+                 <span>เร่งด่วน</span>
+                 <select value={newTaskUrgent ? 'yes' : 'no'} onChange={(event) => setNewTaskUrgent(event.target.value === 'yes')}>
+                   <option value="no">ไม่เร่งด่วน</option>
+                   <option value="yes">เร่งด่วน</option>
+                 </select>
+               </label>
+             </div>
+             <div className="modal-actions">
+               <button className="secondary-button" onClick={() => setShowTaskForm(false)}>ยกเลิก</button>
+               <button className="primary-button" onClick={saveTask} disabled={!newTaskTitle.trim()}>
+                 <Check size={17} /> บันทึกงาน
+               </button>
+             </div>
+           </section>
+         </div>
+       )}
+
+       {showReport && (
+         <div className="modal-backdrop" onMouseDown={() => setShowReport(false)}>
+           <section className="upload-modal report-modal" id="report-content" role="dialog" aria-modal="true" aria-labelledby="report-title" onMouseDown={(event) => event.stopPropagation()}>
+             <div className="modal-heading">
+               <div>
+                 <span className="panel-kicker">รีพอร์ตกระแสเงินสด</span>
+                 <h2 id="report-title">
+                   {period === 'monthly' ? 'รายเดือน' : period === '6m' ? 'ราย 6 เดือน' : 'รายปี'}
+                 </h2>
+                 <p>สรุปรายรับ รายจ่าย และยอดคงเหลือ</p>
+               </div>
+               <button className="icon-button" aria-label="ปิด" onClick={() => setShowReport(false)}>
+                 <X size={20} />
+               </button>
+             </div>
+             <div className="report-summary">
+               <div>
+                 <span>รายรับรวม</span>
+                 <strong className="income">{baht(period === 'monthly' ? 48260 : period === '6m' ? 284650 : 3200000)}</strong>
+               </div>
+               <div>
+                 <span>รายจ่ายรวม</span>
+                 <strong className="expense">{baht(period === 'monthly' ? 21840 : period === '6m' ? 132480 : 1500000)}</strong>
+               </div>
+               <div>
+                 <span>สุทธิ</span>
+                 <strong className="income">{baht(period === 'monthly' ? 26420 : period === '6m' ? 152170 : 1700000)}</strong>
+               </div>
+             </div>
+             <div className="report-table">
+               <div className="report-table-head">
+                 <span>งวด</span>
+                 <span>รายรับ</span>
+                 <span>รายจ่าย</span>
+                 <span>สุทธิ</span>
+               </div>
+               {(period === 'monthly'
+                 ? [['ม.ค.', 42000, 18000, 24000], ['ก.พ.', 45000, 19500, 25500], ['มี.ค.', 48000, 21000, 27000], ['เม.ย.', 47000, 20500, 26500], ['พ.ค.', 50000, 22000, 28000], ['มิ.ย.', 48260, 21840, 26420]]
+                 : period === '6m'
+                   ? [['ก.พ.', 228000, 115000, 113000], ['มี.ค.', 235000, 118000, 117000], ['เม.ย.', 240000, 120000, 120000], ['พ.ค.', 245000, 122000, 123000], ['มิ.ย.', 242000, 121000, 121000], ['ก.ค.', 241300, 120000, 121300]]
+                   : [['Q1', 700000, 450000, 250000], ['Q2', 750000, 470000, 280000], ['Q3', 780000, 460000, 320000], ['Q4', 800000, 480000, 320000]]
+               ).map(([label, income, expense, net]) => {
+                   const inc = Number(income)
+                   const exp = Number(expense)
+                   const n = Number(net)
+                   return (
+                     <div className="report-row" key={label}>
+                       <span>{label}</span>
+                       <span className="income">{baht(inc)}</span>
+                       <span className="expense">{baht(exp)}</span>
+                       <span className={n >= 0 ? 'income' : 'expense'}>{baht(n)}</span>
+                     </div>
+                   )
+                 })}
+             </div>
+             <div className="modal-actions">
+               <button className="secondary-button" onClick={() => setShowReport(false)}>ปิด</button>
+               <button className="primary-button" onClick={async () => { await generatePDF('report-content', 'รายรับ-รายจ่าย.pdf'); setShowReport(false) }}>
+                 <FileText size={17} /> ส่งออก PDF
+               </button>
+             </div>
+           </section>
+         </div>
+       )}
+
+       {showTxDetail && selectedTx && (
+         <div className="modal-backdrop" onMouseDown={() => setShowTxDetail(false)}>
+           <section className="upload-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+             <div className="modal-heading">
+               <div>
+                 <span className="panel-kicker">รายละเอียดรายการ</span>
+                 <h2>{selectedTx.title}</h2>
+               </div>
+               <button className="icon-button" aria-label="ปิด" onClick={() => setShowTxDetail(false)}>
+                 <X size={20} />
+               </button>
+             </div>
+             <div className="tx-detail-grid">
+               <div><span>วันที่</span><strong>{selectedTx.date}</strong></div>
+               <div><span>จำนวน</span><strong className={selectedTx.tone}>{selectedTx.amount}</strong></div>
+               <div><span>หมวดหมู่</span><strong>{selectedTx.category ?? (selectedTx.tone === 'income' ? 'รายรับ' : 'ค่าใช้จ่าย')}</strong></div>
+               {selectedTx.linkedTo && (
+                 <div>
+                   <span>เชื่อมโยง</span>
+                   <button className="linked-pill" onClick={() => { setShowTxDetail(false); setActiveNav(selectedTx.linkedTo === 'asset' ? 'assets' : 'investment') }}>
+                     <Link2 size={12} /> {selectedTx.linkedTo === 'asset' ? 'ทะเบียนทรัพย์สิน' : 'พอร์ตลงทุน'}
+                   </button>
+                 </div>
+               )}
+             </div>
+             <div className="modal-actions">
+               <button className="secondary-button" onClick={() => setShowTxDetail(false)}>ปิด</button>
+             </div>
+           </section>
+         </div>
+       )}
+
+       {showAssetDetail && selectedAsset && (
+         <div className="modal-backdrop" onMouseDown={() => setShowAssetDetail(false)}>
+           <section className="upload-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+             <div className="modal-heading">
+               <div>
+                 <span className="panel-kicker">รายละเอียดทรัพย์สิน</span>
+                 <h2>{selectedAsset.name}</h2>
+               </div>
+               <button className="icon-button" aria-label="ปิด" onClick={() => setShowAssetDetail(false)}>
+                 <X size={20} />
+               </button>
+             </div>
+             <div className="tx-detail-grid">
+               <div><span>หมวดหมู่</span><strong>{selectedAsset.category}</strong></div>
+               <div><span>มูลค่า</span><strong>{selectedAsset.value}</strong></div>
+               <div><span>อัปเดตล่าสุด</span><strong>{selectedAsset.updated}</strong></div>
+               <div><span>เอกสาร</span><strong>{selectedAsset.docs} ไฟล์</strong></div>
+             </div>
+             <div className="modal-actions">
+               <button className="secondary-button" onClick={() => setShowAssetDetail(false)}>ปิด</button>
+             </div>
+           </section>
+         </div>
+       )}
+
+       {showExport && (
+         <div className="modal-backdrop" onMouseDown={() => setShowExport(false)}>
+           <section className="upload-modal" id="export-content" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+             <div className="modal-heading">
+               <div>
+                 <span className="panel-kicker">ส่งออกข้อมูล</span>
+                 <h2>ส่งออก PDF</h2>
+                 <p>เลือกช่วงเวลาและประเภทข้อมูลที่ต้องการส่งออก</p>
+               </div>
+               <button className="icon-button" aria-label="ปิด" onClick={() => setShowExport(false)}>
+                 <X size={20} />
+               </button>
+             </div>
+             <div className="export-options">
+               <label className="form-field">
+                 <span>ประเภทข้อมูล</span>
+                 <select defaultValue="all">
+                   <option value="all">ทั้งหมด</option>
+                   <option value="ledger">รายรับ–รายจ่าย</option>
+                   <option value="assets">ทรัพย์สิน</option>
+                   <option value="investment">การลงทุน</option>
+                   <option value="tasks">สิ่งที่ต้องทำ</option>
+                 </select>
+               </label>
+               <label className="form-field">
+                 <span>ช่วงเวลา</span>
+                 <select defaultValue="monthly">
+                   <option value="monthly">รายเดือน</option>
+                   <option value="6m">ราย 6 เดือน</option>
+                   <option value="annual">รายปี</option>
+                 </select>
+               </label>
+             </div>
+             <div className="modal-actions">
+               <button className="secondary-button" onClick={() => setShowExport(false)}>ยกเลิก</button>
+               <button className="primary-button" onClick={async () => { await generatePDF('export-content', 'รายงาน.pdf'); setShowExport(false) }}>
+                 <FileText size={17} /> ส่งออก
+               </button>
+             </div>
+           </section>
+         </div>
+       )}
+
+       {showShare && (
+         <div className="modal-backdrop" onMouseDown={() => setShowShare(false)}>
+           <section className="upload-modal" id="share-content" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+             <div className="modal-heading">
+               <div>
+                 <span className="panel-kicker">แชร์ข้อมูล</span>
+                 <h2>แชร์รายงาน</h2>
+                 <p>เลือกวิธีการแชร์ข้อมูล</p>
+               </div>
+               <button className="icon-button" aria-label="ปิด" onClick={() => setShowShare(false)}>
+                 <X size={20} />
+               </button>
+             </div>
+             <div className="share-options">
+               <button className="share-option" onClick={() => { setShowShare(false); window.open('mailto:?subject=รายงาน BaanBalance&body=เรียนเพื่อน/สมาชิก ขอแชร์รายงาน BaanBalance ดังนี้ครับ/ค่ะ', '_blank') }}>
+                 <span className="share-icon">📧</span>
+                 <div><strong>อีเมล</strong><small>ส่งไปยังผู้รับ</small></div>
+               </button>
+               <button className="share-option" onClick={async () => { setShowShare(false); try { await navigator.clipboard.writeText(window.location.href); setSavedMessage('คัดลอกลิงก์เรียบร้อยแล้ว') } catch { setSavedMessage('ไม่สามารถคัดลอกลิงก์ได้') } }}>
+                 <span className="share-icon">🔗</span>
+                 <div><strong>ลิงก์</strong><small>คัดลอกลิงก์แชร์</small></div>
+               </button>
+               <button className="share-option" onClick={async () => { await generatePDF('share-content', 'รายงาน BaanBalance.pdf'); setShowShare(false) }}>
+                 <span className="share-icon">💾</span>
+                 <div><strong>บันทึกไฟล์</strong><small>ดาวน์โหลดเป็น PDF</small></div>
+               </button>
+             </div>
+             <div className="modal-actions">
+               <button className="secondary-button" onClick={() => setShowShare(false)}>ปิด</button>
+             </div>
+           </section>
+         </div>
+       )}
+
+       {showDocViewer && selectedDocAsset && (
+         <div className="modal-backdrop" onMouseDown={() => setShowDocViewer(false)}>
+           <section className="upload-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+             <div className="modal-heading">
+               <div>
+                 <span className="panel-kicker">เอกสารแนบ</span>
+                 <h2>{selectedDocAsset.name}</h2>
+                 <p>{selectedDocAsset.docs} ไฟล์ · อัปเดต {selectedDocAsset.updated}</p>
+               </div>
+               <button className="icon-button" aria-label="ปิด" onClick={() => setShowDocViewer(false)}>
+                 <X size={20} />
+               </button>
+             </div>
+             <div className="doc-grid">
+               {Array.from({ length: selectedDocAsset.docs }).map((_, i) => (
+                 <div className="doc-card" key={i}>
+                   <div className="doc-icon">
+                     {selectedDocAsset.category === 'อสังหาริมทรัพย์' ? '🏠' : selectedDocAsset.category === 'ยานพาหนะ' ? '🚙' : '📄'}
+                   </div>
+                   <div>
+                     <strong>เอกสาร #{i + 1}</strong>
+                     <small>{selectedDocAsset.category} · PDF</small>
+                   </div>
+                   <button className="secondary-button" onClick={() => setSavedMessage('ดาวน์โหลดเอกสารแล้ว')}>ดาวน์โหลด</button>
+                 </div>
+               ))}
+             </div>
+             <div className="modal-actions">
+               <button className="secondary-button" onClick={() => setShowDocViewer(false)}>ปิด</button>
+             </div>
+           </section>
+         </div>
+       )}
+     </div>
+   )
+ }
 
 export default App
